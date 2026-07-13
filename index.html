@@ -71,6 +71,19 @@ button{padding:8px 14px;border:none;border-radius:6px;font-size:13px;font-weight
 .upload-area p{color:#3498db;font-size:13px;font-weight:600}
 .upload-area .sub{color:#666;font-size:10px;margin-top:3px;font-weight:400}
 input[type=file]{display:none}
+.lane-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px}
+.lane-card-dep{background:#16213e;border-radius:8px;padding:10px;border-top:4px solid #3498db;cursor:pointer}
+.lane-card-dep.has-risk{border-top-color:#f39c12}
+.lane-card-dep.has-late{border-top-color:#e74c3c}
+.lane-card-dep.empty{opacity:0.4;border-top-color:#333}
+.lane-card-dep .lc-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.lane-card-dep .lc-num{font-size:16px;font-weight:700;color:#3498db}
+.lane-card-dep .lc-count{font-size:12px;color:#aaa}
+.lane-card-dep .lc-status{font-size:18px;margin-bottom:4px}
+.lane-card-dep .lc-names{font-size:10px;color:#aaa;line-height:1.3}
+.lane-expanded{background:#16213e;border-radius:8px;padding:10px;margin-bottom:6px}
+.lane-expanded h3{font-size:14px;color:#3498db;margin-bottom:8px}
+.lane-expanded .back-btn{background:#333;color:#eee;padding:6px 12px;border:none;border-radius:4px;font-size:11px;cursor:pointer;margin-bottom:8px}
 </style></head><body>
 <div class="header"><h1>Station Ops</h1><div><div class="date" id="currentDate"></div></div></div>
 <div class="tabs"><button id="tabArrivals" onclick="showTab('arrivals')">Arrivals</button><button id="tabDepartures" onclick="showTab('departures')">Departures</button><button id="tabLanes" onclick="showTab('lanes')">Lanes</button><button id="tabRoutes" onclick="showTab('routes')">Routes</button><button id="tabEdit" onclick="showTab('edit')">Edit</button></div>
@@ -85,7 +98,6 @@ input[type=file]{display:none}
 <!-- DEPARTURES TAB -->
 <div id="viewDepartures" class="hidden">
 <div class="otd-bar"><div class="otd-pct" id="otdPct">--</div><div class="otd-label">Live OTD %</div></div>
-<div class="section"><h2>DPs in Lanes — Tap Departed when they leave</h2></div>
 <div id="departureList"></div>
 </div>
 
@@ -210,24 +222,75 @@ function markNoShow(i){
     saveToStorage();renderArrivals();updateStats();
 }
 
+var depExpandedLane=null;
 function renderDepartures(){
     var list=document.getElementById('departureList');
-    var inLane=roster.filter(function(dp){return dp.status==='arrived'&&dp.lane&&!dp.departedTime});
-    var departed=roster.filter(function(dp){return dp.departedTime});
     // Calculate OTD
-    var otdTotal=departed.length+inLane.filter(function(dp){return getOTDStatus(dp)==='late'}).length;
+    var allWithLane=roster.filter(function(dp){return dp.status==='arrived'&&dp.lane});
+    var departed=allWithLane.filter(function(dp){return dp.departedTime});
+    var inLane=allWithLane.filter(function(dp){return!dp.departedTime});
+    var lateInLane=inLane.filter(function(dp){return getOTDStatus(dp)==='late'});
+    var otdTotal=departed.length+lateInLane.length;
     var otdPass=departed.filter(function(dp){return getOTDStatus(dp)==='ontime'}).length;
     var otdPct=otdTotal>0?Math.round((otdPass/otdTotal)*100):'--';
     var pctEl=document.getElementById('otdPct');
     pctEl.textContent=otdPct+(otdPct!=='--'?'%':'');
     pctEl.className='otd-pct '+(otdPct>=90?'otd-green':otdPct>=80?'otd-yellow':'otd-red');
 
-    if(!inLane.length&&!departed.length){list.innerHTML='<div class="empty-state"><p>No DPs in lanes yet</p></div>';return}
-    var h='';
-    if(inLane.length){
-        h+='<div class="wave-header">In Lane — Awaiting Departure</div>';
-        for(var i=0;i<inLane.length;i++){
-            var dp=inLane[i];var idx=roster.indexOf(dp);
+    if(!allWithLane.length){list.innerHTML='<div class="empty-state"><p>No DPs in lanes yet.<br>Check in DPs on the Arrivals tab first.</p></div>';return}
+
+    // If a lane is expanded, show detail view
+    if(depExpandedLane){renderLaneDetail(depExpandedLane);return}
+
+    // Show lane cards grid
+    var lanes={};for(var i=1;i<=8;i++)lanes[i]=[];
+    for(var j=0;j<allWithLane.length;j++){if(allWithLane[j].lane)lanes[allWithLane[j].lane].push(allWithLane[j])}
+
+    var h='<div class="lane-grid">';
+    for(var l=1;l<=8;l++){
+        var dps=lanes[l];
+        var still=dps.filter(function(d){return!d.departedTime});
+        var gone=dps.filter(function(d){return d.departedTime});
+        var hasLate=still.some(function(d){return getOTDStatus(d)==='late'});
+        var hasRisk=still.some(function(d){return getOTDStatus(d)==='atrisk'});
+        var cardCls='lane-card-dep';
+        if(!dps.length)cardCls+=' empty';
+        else if(hasLate)cardCls+=' has-late';
+        else if(hasRisk)cardCls+=' has-risk';
+
+        h+='<div class="'+cardCls+'" onclick="'+(dps.length?'expandLane('+l+')':'')+'">';
+        h+='<div class="lc-header"><span class="lc-num">Lane '+l+'</span><span class="lc-count">'+still.length+' in</span></div>';
+        if(!dps.length){h+='<div class="lc-status">Empty</div>'}
+        else{
+            var icons='';
+            for(var k=0;k<still.length;k++){var st=getOTDStatus(still[k]);icons+=(st==='late'?'\uD83D\uDD34':st==='atrisk'?'\uD83D\uDFE1':'\uD83D\uDFE2')}
+            h+='<div class="lc-status">'+icons+'</div>';
+            var names=[];for(var m=0;m<still.length&&m<3;m++){names.push(still[m].name.split(' ')[0])}
+            if(still.length>3)names.push('+'+(still.length-3)+' more');
+            h+='<div class="lc-names">'+esc(names.join(', '))+'</div>';
+        }
+        if(gone.length)h+='<div class="lc-names" style="color:#2ecc71;margin-top:3px">'+gone.length+' departed</div>';
+        h+='</div>';
+    }
+    h+='</div>';
+    list.innerHTML=h;
+}
+
+function expandLane(l){depExpandedLane=l;renderDepartures()}
+
+function renderLaneDetail(l){
+    var list=document.getElementById('departureList');
+    var dps=roster.filter(function(dp){return dp.status==='arrived'&&dp.lane===l});
+    var still=dps.filter(function(d){return!d.departedTime});
+    var gone=dps.filter(function(d){return d.departedTime});
+
+    var h='<div class="lane-expanded">';
+    h+='<button class="back-btn" onclick="depExpandedLane=null;renderDepartures()">Back to all lanes</button>';
+    h+='<h3>Lane '+l+' — '+still.length+' in lane, '+gone.length+' departed</h3>';
+
+    if(still.length){
+        for(var i=0;i<still.length;i++){
+            var dp=still[i];var idx=roster.indexOf(dp);
             var status=getOTDStatus(dp);
             var deadline=getPlannedDeparture(dp);
             var deadlineStr=deadline?minutesToTime(deadline):'';
@@ -236,23 +299,23 @@ function renderDepartures(){
             h+='<div class="dep-item '+status+'">';
             h+='<span class="status-badge '+badgeCls+'">'+statusTxt+'</span>';
             h+='<div class="info"><div class="dp-name">'+esc(dp.name)+'</div>';
-            h+='<div class="dep-details">Lane '+dp.lane+' | Must depart by '+deadlineStr+'</div></div>';
-            h+='<button class="dep-btn" onclick="markDeparted('+idx+')">Departed</button></div>';
+            h+='<div class="dep-details">Depart by '+deadlineStr+'</div></div>';
+            h+='<button class="dep-btn" onclick="markDeparted('+idx+');renderDepartures()">Departed</button></div>';
         }
     }
-    if(departed.length){
-        h+='<div class="wave-header">Departed</div>';
-        for(var j=0;j<departed.length;j++){
-            var dp2=departed[j];
-            var s2=getOTDStatus(dp2);
+    if(gone.length){
+        h+='<div class="wave-header" style="margin-top:10px">Departed from Lane '+l+'</div>';
+        for(var j=0;j<gone.length;j++){
+            var dp2=gone[j];var s2=getOTDStatus(dp2);
             var badgeCls2=s2==='ontime'?'badge-green':'badge-red';
             var statusTxt2=s2==='ontime'?'ON TIME':'LATE';
             h+='<div class="dep-item '+s2+'">';
             h+='<span class="status-badge '+badgeCls2+'">'+statusTxt2+'</span>';
             h+='<div class="info"><div class="dp-name">'+esc(dp2.name)+'</div>';
-            h+='<div class="dep-details">Lane '+dp2.lane+' | Departed '+dp2.departedTime+'</div></div></div>';
+            h+='<div class="dep-details">Departed '+dp2.departedTime+'</div></div></div>';
         }
     }
+    h+='</div>';
     list.innerHTML=h;
 }
 
@@ -305,3 +368,4 @@ function loadDemo(){document.getElementById('rosterInput').value='A111111111111\
 function esc(s){var d=document.createElement('div');d.appendChild(document.createTextNode(s));return d.innerHTML}
 init();
 </script></body></html>
+
