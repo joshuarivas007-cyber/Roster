@@ -251,6 +251,8 @@ function renderDepartures(){
         var dps=lanes[l];
         var still=dps.filter(function(d){return!d.departedTime});
         var gone=dps.filter(function(d){return d.departedTime});
+        // If all departed, show as empty (clean slate for next wave)
+        if(still.length===0&&gone.length>0){cardCls+=' empty';}
         var hasLate=still.some(function(d){return getOTDStatus(d)==='late'});
         var hasRisk=still.some(function(d){return getOTDStatus(d)==='atrisk'});
         var cardCls='lane-card-dep';
@@ -260,7 +262,7 @@ function renderDepartures(){
 
         h+='<div class="'+cardCls+'" onclick="'+(dps.length?'expandLane('+l+')':'')+'">';
         h+='<div class="lc-header"><span class="lc-num">Lane '+l+'</span><span class="lc-count">'+still.length+' in</span></div>';
-        if(!dps.length){h+='<div class="lc-status">Empty</div>'}
+        if(!still.length){h+='<div class="lc-status">'+(gone.length?'All departed \u2705':'Empty')+'</div>'}
         else{
             var icons='';
             for(var k=0;k<still.length;k++){var st=getOTDStatus(still[k]);icons+=(st==='late'?'\uD83D\uDD34':st==='atrisk'?'\uD83D\uDFE1':'\uD83D\uDFE2')}
@@ -269,7 +271,7 @@ function renderDepartures(){
             if(still.length>3)names.push('+'+(still.length-3)+' more');
             h+='<div class="lc-names">'+esc(names.join(', '))+'</div>';
         }
-        if(gone.length)h+='<div class="lc-names" style="color:#2ecc71;margin-top:3px">'+gone.length+' departed</div>';
+        if(gone.length&&still.length)h+='<div class="lc-names" style="color:#2ecc71;margin-top:3px">'+gone.length+' departed</div>';
         if(still.length)h+='<button class="dep-btn" style="width:100%;margin-top:6px;font-size:11px;padding:6px" onclick="event.stopPropagation();allDeparted('+l+')">All Departed</button>';
         h+='</div>';
     }
@@ -380,5 +382,6 @@ function loadDemo(){document.getElementById('rosterInput').value='A111111111111\
 function esc(s){var d=document.createElement('div');d.appendChild(document.createTextNode(s));return d.innerHTML}
 init();
 </script></body></html>
+
 
 
