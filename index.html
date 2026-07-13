@@ -270,12 +270,23 @@ function renderDepartures(){
             h+='<div class="lc-names">'+esc(names.join(', '))+'</div>';
         }
         if(gone.length)h+='<div class="lc-names" style="color:#2ecc71;margin-top:3px">'+gone.length+' departed</div>';
+        if(still.length)h+='<button class="dep-btn" style="width:100%;margin-top:6px;font-size:11px;padding:6px" onclick="event.stopPropagation();allDeparted('+l+')">All Departed</button>';
         h+='</div>';
     }
     h+='</div>';
     list.innerHTML=h;
 }
 
+function allDeparted(l){
+    var n=new Date(),hh=n.getHours(),mm=n.getMinutes();
+    var timeStr=(hh<10?'0':'')+hh+':'+(mm<10?'0':'')+mm;
+    for(var i=0;i<roster.length;i++){
+        if(roster[i].status==='arrived'&&roster[i].lane===l&&!roster[i].departedTime){
+            roster[i].departedTime=timeStr;
+        }
+    }
+    saveToStorage();renderDepartures();
+}
 function expandLane(l){depExpandedLane=l;renderDepartures()}
 
 function renderLaneDetail(l){
@@ -287,6 +298,7 @@ function renderLaneDetail(l){
     var h='<div class="lane-expanded">';
     h+='<button class="back-btn" onclick="depExpandedLane=null;renderDepartures()">Back to all lanes</button>';
     h+='<h3>Lane '+l+' — '+still.length+' in lane, '+gone.length+' departed</h3>';
+    if(still.length)h+='<button class="dep-btn" style="width:100%;margin-bottom:8px;padding:10px;font-size:14px" onclick="allDeparted('+l+');renderDepartures()">All Departed from Lane '+l+'</button>';
 
     if(still.length){
         for(var i=0;i<still.length;i++){
@@ -368,4 +380,5 @@ function loadDemo(){document.getElementById('rosterInput').value='A111111111111\
 function esc(s){var d=document.createElement('div');d.appendChild(document.createTextNode(s));return d.innerHTML}
 init();
 </script></body></html>
+
 
